@@ -60,6 +60,14 @@ from .block import (
     SCDown,
     TorchVision,
 )
+from .mafyolo import (
+    RepHDW,
+    AVG,
+    RepHMS,
+    ConvMS,
+    UniRepLKNetBlock,
+
+)
 from .conv import (
     CBAM,
     ChannelAttention,
