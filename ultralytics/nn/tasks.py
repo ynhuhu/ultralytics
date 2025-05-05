@@ -59,7 +59,11 @@ from ultralytics.nn.modules import (
     RepConv,
     RepNCSPELAN4,
     RepVGGDW,
+    RepHDW,
+    AVG,
     RepHMS,
+    ConvMS,
+    UniRepLKNetBlock,
     ResNetLayer,
     RTDETRDecoder,
     SCDown,
@@ -224,6 +228,9 @@ class BaseModel(torch.nn.Module):
                     m.forward = m.forward_fuse
                 if isinstance(m, v10Detect):
                     m.fuse()  # remove one2many head
+                if isinstance(m, UniRepLKNetBlock):
+                    m.reparameterize()
+                    LOGGER.info("Switch model to UniRepLKNetBlock")
             self.info(verbose=verbose)
 
         return self
@@ -1384,6 +1391,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C3k2,
             RepNCSPELAN4,
             RepHMS,
+            ConvMS,
             ELAN1,
             ADown,
             AConv,
@@ -1415,6 +1423,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C3Ghost,
             C3x,
             RepC3,
+            RepHDW,
             C2fPSA,
             C2fCIB,
             C2PSA,
@@ -1468,6 +1477,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = args[1] if args[3] else args[1] * 4
         elif m is torch.nn.BatchNorm2d:
             args = [ch[f]]
+        elif m is AVG:
+            c2 = ch[f]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in frozenset(
