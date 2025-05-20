@@ -964,22 +964,7 @@ class v10DetectLoss_aux:
         one2one = preds["one2one"]
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0] + self.aux_loss_ratio * loss_one2many_aux[0], torch.cat((loss_one2many[1], loss_one2one[1], self.aux_loss_ratio *loss_one2many_aux[1]))
-        # return loss_one2many[0] + loss_one2one[0], torch.cat((loss_one2many[1], loss_one2one[1]))
-
-class v10DetectATSSLoss:
-    def __init__(self, model):
-        self.one2many = v8DetectionLoss(model, tal_topk=10)
-        self.one2one = v8DetectionLoss(model, tal_topk=1)
-        self.one2many_atss = v8DetectionATSSLoss(model, tal_topk=10)
-
-    def __call__(self, preds, batch):
-        one2many = preds["one2many"]
-        loss_one2many = self.one2many(one2many, batch)
-        one2one = preds["one2one"]
-        loss_one2one = self.one2one(one2one, batch)
-        one2many_atss = preds["one2many_atss"]
-        loss_one2many_atss = self.one2many_atss(one2many_atss, batch)
-        return loss_one2many[0] + loss_one2one[0] + loss_one2many_atss[0], torch.cat((loss_one2many[1], loss_one2one[1], loss_one2many_atss[1]))
+        # return loss_one2many[0] + loss_one2one[0], torch.cat((loss_one2many[1], loss_one2one[1])
 
 
 class v10DetectLoss:
