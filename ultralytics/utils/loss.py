@@ -811,3 +811,120 @@ class TVPSegmentLoss(TVPDetectLoss):
         vp_loss = self.vp_criterion((vp_feats, pred_masks, proto), batch)
         cls_loss = vp_loss[0][2]
         return cls_loss, vp_loss[1]
+
+class v10DetectATSSLoss:
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+        self.one2many_atss = v8DetectionATSSLoss(model, tal_topk=10)
+
+    def __call__(self, preds, batch):
+        one2many = preds["one2many"]
+        loss_one2many = self.one2many(one2many, batch)
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+        one2many_atss = preds["one2many_atss"]
+        loss_one2many_atss = self.one2many_atss(one2many_atss, batch)
+        return loss_one2many[0] + loss_one2one[0] + loss_one2many_atss[0], torch.cat((loss_one2many[1], loss_one2one[1], loss_one2many_atss[1]))
+
+class v10DetectLoss_aux:
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+        m = model.model[-1]
+
+        if hasattr(m, 'dfl_aux'):
+            self.one2many_aux = v8DetectionLoss(model, tal_topk=13)
+            self.aux_loss_ratio = 0.5
+
+    def __call__(self, preds, batch):
+        one2many = preds["one2many"]
+        if len(one2many) == 4:
+            one2many_aux = one2many[2:4]
+            one2many = one2many[0:2]
+        else:
+            one2many_aux = one2many[3:6]
+            one2many = one2many[0:3]
+        loss_one2many = self.one2many(one2many, batch)
+        loss_one2many_aux = self.one2many_aux(one2many_aux, batch)
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+        return loss_one2many[0] + loss_one2one[0] + self.aux_loss_ratio * loss_one2many_aux[0], torch.cat((loss_one2many[1], loss_one2one[1], self.aux_loss_ratio *loss_one2many_aux[1]))
+        # return loss_one2many[0] + loss_one2one[0], torch.cat((loss_one2many[1], loss_one2one[1]))
+
+class v10DetectATSSLoss:
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+        self.one2many_atss = v8DetectionATSSLoss(model, tal_topk=10)
+
+    def __call__(self, preds, batch):
+        one2many = preds["one2many"]
+        loss_one2many = self.one2many(one2many, batch)
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+        one2many_atss = preds["one2many_atss"]
+        loss_one2many_atss = self.one2many_atss(one2many_atss, batch)
+        return loss_one2many[0] + loss_one2one[0] + loss_one2many_atss[0], torch.cat((loss_one2many[1], loss_one2one[1], loss_one2many_atss[1]))
+
+
+class v10DetectLoss:
+    def __init__(self, model):
+        self.one2many = v8DetectionLoss(model, tal_topk=10)
+        self.one2one = v8DetectionLoss(model, tal_topk=1)
+
+    def __call__(self, preds, batch):
+        one2many = preds["one2many"]
+        loss_one2many = self.one2many(one2many, batch)
+        one2one = preds["one2one"]
+        loss_one2one = self.one2one(one2one, batch)
+        return loss_one2many[0] + loss_one2one[0], torch.cat((loss_one2many[1], loss_one2one[1]))
+
+def generate_anchors(feats, fpn_strides, grid_cell_size=5.0, grid_cell_offset=0.5,  device='cpu', is_eval=False):
+    '''Generate anchors from features.'''
+    anchors = []
+    anchor_points = []
+    stride_tensor = []
+    num_anchors_list = []
+    assert feats is not None
+    if is_eval:
+        for i, stride in enumerate(fpn_strides):
+            _, _, h, w = feats[i].shape
+            shift_x = torch.arange(end=w, device=device) + grid_cell_offset
+            shift_y = torch.arange(end=h, device=device) + grid_cell_offset
+            shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
+            anchor_point = torch.stack(
+                    [shift_x, shift_y], axis=-1).to(torch.float)
+            anchor_points.append(anchor_point.reshape([-1, 2]))
+            stride_tensor.append(
+                torch.full(
+                    (h * w, 1), stride, dtype=torch.float, device=device))
+        anchor_points = torch.cat(anchor_points)
+        stride_tensor = torch.cat(stride_tensor)
+        return anchor_points, stride_tensor
+    else:
+        for i, stride in enumerate(fpn_strides):
+            _, _, h, w = feats[i].shape
+            cell_half_size = grid_cell_size * stride * 0.5
+            shift_x = (torch.arange(end=w, device=device) + grid_cell_offset) * stride
+            shift_y = (torch.arange(end=h, device=device) + grid_cell_offset) * stride
+            shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
+            anchor = torch.stack(
+                [
+                    shift_x - cell_half_size, shift_y - cell_half_size,
+                    shift_x + cell_half_size, shift_y + cell_half_size
+                ],
+                axis=-1).clone().to(feats[0].dtype)
+            anchor_point = torch.stack(
+                [shift_x, shift_y], axis=-1).clone().to(feats[0].dtype)
+
+            anchors.append(anchor.reshape([-1, 4]))
+            anchor_points.append(anchor_point.reshape([-1, 2]))
+            num_anchors_list.append(len(anchors[-1]))
+            stride_tensor.append(
+                torch.full(
+                    [num_anchors_list[-1], 1], stride, dtype=feats[0].dtype))
+        anchors = torch.cat(anchors)
+        anchor_points = torch.cat(anchor_points).to(device)
+        stride_tensor = torch.cat(stride_tensor).to(device)
+        return anchors, anchor_points, num_anchors_list, stride_tensor
