@@ -116,24 +116,25 @@ def torch_load(*args, **kwargs):
     return _torch_load(*args, **kwargs)
 
 
-def torch_save(*args, **kwargs):
+def torch_save(*args, use_dill=True, **kwargs):
     """
-    Save PyTorch objects with retry mechanism for robustness.
-
-    This function wraps torch.save with 3 retries and exponential backoff in case of save failures, which can occur
-    due to device flushing delays or antivirus scanning.
+    Optionally use dill to serialize lambda functions where pickle does not, adding robustness with 3 retries and
+    exponential standoff in case of save failure.
 
     Args:
-        *args (Any): Positional arguments to pass to torch.save.
-        **kwargs (Any): Keyword arguments to pass to torch.save.
-
-    Returns:
-        (Any): Result of torch.save operation if successful, None otherwise.
-
-    Examples:
-        >>> model = torch.nn.Linear(10, 1)
-        >>> torch_save(model.state_dict(), "model.pt")
+        *args (tuple): Positional arguments to pass to torch.save.
+        use_dill (bool): Whether to try using dill for serialization if available. Defaults to True.
+        **kwargs (any): Keyword arguments to pass to torch.save.
     """
+    try:
+        assert use_dill
+        import dill as pickle
+    except (AssertionError, ImportError):
+        import pickle
+
+    if "pickle_module" not in kwargs:
+        kwargs["pickle_module"] = pickle
+
     for i in range(4):  # 3 retries
         try:
             return _torch_save(*args, **kwargs)
