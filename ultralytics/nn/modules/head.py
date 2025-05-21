@@ -64,6 +64,12 @@ class Detect(nn.Module):
             self.one2one_cv2 = copy.deepcopy(self.cv2)
             self.one2one_cv3 = copy.deepcopy(self.cv3)
 
+    def forward_feat(self, x, cv2, cv3):
+        y = []
+        for i in range(self.nl):
+            y.append(torch.cat((cv2[i](x[i]), cv3[i](x[i])), 1))
+        return y
+        
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         if self.end2end:
