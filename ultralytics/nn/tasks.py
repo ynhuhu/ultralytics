@@ -85,6 +85,9 @@ from ultralytics.utils.loss import (
     v8OBBLoss,
     v8PoseLoss,
     v8SegmentationLoss,
+    v10DetectLoss, 
+    v10DetectATSSLoss, 
+    v10DetectLoss_aux,
 )
 from ultralytics.utils.ops import make_divisible
 from ultralytics.utils.plotting import feature_visualization
@@ -356,6 +359,12 @@ class DetectionModel(BaseModel):
             def _forward(x):
                 """Perform a forward pass through the model, handling different Detect subclass types accordingly."""
                 if self.end2end:
+                    return self.forward(x)["one2many"]
+                if isinstance(m, v10Detect):
+                    return self.forward(x)["one2many"]
+                if isinstance(m, v10ATSSDetect):
+                    return self.forward(x)["one2many"]
+                if isinstance(m, v10Detect_aux):
                     return self.forward(x)["one2many"]
                 return self.forward(x)[0] if isinstance(m, (Segment, YOLOESegment, Pose, OBB)) else self.forward(x)
 
@@ -1054,6 +1063,10 @@ class YOLOESegModel(YOLOEModel, SegmentationModel):
             preds = self.forward(batch["img"], tpe=batch.get("txt_feats", None), vpe=batch.get("visuals", None))
         return self.criterion(preds, batch)
 
+class YOLOv10DetectionModel(DetectionModel):
+    def init_criterion(self):
+        # return v10DetectLoss_aux(self)
+        return v10DetectLoss(self)
 
 class Ensemble(torch.nn.ModuleList):
     """Ensemble of models."""
@@ -1484,7 +1497,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in frozenset(
-            {Detect, WorldDetect, YOLOEDetect, Segment, YOLOESegment, Pose, OBB, ImagePoolingAttn, v10Detect}
+            {Detect, WorldDetect, YOLOEDetect, Segment, YOLOESegment, Pose, OBB, ImagePoolingAttn, v10Detect, v10ATSSDetect, v10Detect_aux}
         ):
             args.append([ch[x] for x in f])
             if m is Segment or m is YOLOESegment:
@@ -1606,7 +1619,7 @@ def guess_model_task(model):
                 return "pose"
             elif isinstance(m, OBB):
                 return "obb"
-            elif isinstance(m, (Detect, WorldDetect, YOLOEDetect, v10Detect)):
+            elif isinstance(m, (Detect, WorldDetect, YOLOEDetect, v10Detect, v10ATSSDetect, v10Detect_aux)):
                 return "detect"
 
     # Guess from model filename
