@@ -975,43 +975,49 @@ class v10Detect_aux(Detect):
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
 class v10Detect(Detect):
-    """
-    v10 Detection head from https://arxiv.org/pdf/2405.14458.
-
-    Args:
-        nc (int): Number of classes.
-        ch (tuple): Tuple of channel sizes.
-
-    Attributes:
-        max_det (int): Maximum number of detections.
-
-    Methods:
-        __init__(self, nc=80, ch=()): Initializes the v10Detect object.
-        forward(self, x): Performs forward pass of the v10Detect module.
-        bias_init(self): Initializes biases of the Detect module.
-
-    """
-
-    end2end = True
+    max_det = 300
 
     def __init__(self, nc=80, ch=()):
-        """Initializes the v10Detect object with the specified number of classes and input channels."""
         super().__init__(nc, ch)
         c3 = max(ch[0], min(self.nc, 100))  # channels
-        # Light cls head
-        self.cv3 = nn.ModuleList(
-            nn.Sequential(
-                nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)),
-                nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1)),
-                nn.Conv2d(c3, self.nc, 1),
-            )
-            for x in ch
-        )
+        self.cv3 = nn.ModuleList(nn.Sequential(nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)), \
+                                               nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1)), \
+                                               nn.Conv2d(c3, self.nc, 1)) for i, x in enumerate(ch))
+        
+        
+        # self.cv3 = nn.ModuleList(
+        #     [nn.Sequential(UniRepLKNetBlock(ch[0], 5), Conv(ch[0], c3, 1), nn.Conv2d(c3, self.nc, 1)),
+        #     nn.Sequential(UniRepLKNetBlock(ch[1], 7), Conv(ch[1], c3, 1), nn.Conv2d(c3, self.nc, 1)),
+        #     nn.Sequential(UniRepLKNetBlock(ch[2], 9), Conv(ch[2], c3, 1), nn.Conv2d(c3, self.nc, 1))]
+        # )
+        self.one2one_cv2 = copy.deepcopy(self.cv2)
         self.one2one_cv3 = copy.deepcopy(self.cv3)
 
-    def fuse(self):
-        """Removes the one2many head."""
-        self.cv2 = self.cv3 = nn.ModuleList([nn.Identity()] * self.nl)
+    def forward(self, x):
+        one2one = self.forward_feat([xi.detach() for xi in x], self.one2one_cv2, self.one2one_cv3)
+        if not self.export:
+            one2many = super().forward(x)
+
+        if not self.training:
+            one2one = self.inference(one2one)
+            if not self.export:
+                return {"one2many": one2many, "one2one": one2one}
+            else:
+                assert (self.max_det != -1)
+                boxes, scores, labels = ops.v10postprocess(one2one.permute(0, 2, 1), self.max_det, self.nc)
+                return torch.cat([boxes, scores.unsqueeze(-1), labels.unsqueeze(-1).to(boxes.dtype)], dim=-1)
+        else:
+            return {"one2many": one2many, "one2one": one2one}
+
+    def bias_init(self):
+        super().bias_init()
+        """Initialize Detect() biases, WARNING: requires stride availability."""
+        m = self  # self.model[-1]  # Detect() module
+        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
+        # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
+        for a, b, s in zip(m.one2one_cv2, m.one2one_cv3, m.stride):  # from
+            a[-1].bias.data[:] = 1.0  # box
+            b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
 class v10ATSSDetect(Detect):
 
