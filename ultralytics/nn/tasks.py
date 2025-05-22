@@ -231,8 +231,8 @@ class BaseModel(torch.nn.Module):
                 if isinstance(m, RepVGGDW):
                     m.fuse()
                     m.forward = m.forward_fuse
-                if isinstance(m, v10Detect):
-                    m.fuse()  # remove one2many head
+                # if isinstance(m, v10Detect):
+                #     m.fuse()  # remove one2many head
                 if isinstance(m, UniRepLKNetBlock):
                     m.reparameterize()
                     LOGGER.info("Switch model to UniRepLKNetBlock")
